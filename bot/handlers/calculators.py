@@ -15,7 +15,7 @@ from services.calculators import (
     format_money,
     MORTGAGE_PROGRAMS
 )
-from db.database import update_user_state, get_user_state, clear_user_state
+from db.database import update_user_state, get_user_state, clear_user_state, get_property
 
 
 async def handle_calc_menu(chat_id: int):
@@ -255,3 +255,129 @@ def parse_price(text: str) -> int:
         return int(float(text) * multiplier)
     except:
         return 0
+
+
+async def handle_calc_for_property(chat_id: int, property_id: int):
+    """Калькулятор с привязкой к ЖК — подставляем данные"""
+    prop = get_property(property_id)
+    if not prop:
+        await send_message(chat_id, "❌ ЖК не найден")
+        return
+    
+    text = f"🧮 <b>Калькулятор: {prop.name}</b>\n\n"
+    
+    # Показываем данные ЖК
+    if prop.price_min and prop.price_max:
+        text += f"💰 Цены: {prop.price_min/1_000_000:.1f} – {prop.price_max/1_000_000:.1f} млн ₽\n"
+    elif prop.price_min:
+        text += f"💰 Цена от: {prop.price_min/1_000_000:.1f} млн ₽\n"
+    
+    if prop.installment_min_pv is not None:
+        text += f"📅 Рассрочка: ПВ от {prop.installment_min_pv:.0f}%"
+        if prop.installment_max_months:
+            text += f", до {prop.installment_max_months} мес"
+        if prop.installment_markup is not None and prop.installment_markup > 0:
+            text += f", +{prop.installment_markup:.0f}%"
+        text += "\n"
+    
+    text += "\nВыбери расчёт:"
+    
+    buttons = []
+    
+    # Если есть цена — предлагаем быстрый расчёт
+    if prop.price_min:
+        buttons.append([{"text": f"📅 Рассрочка ({prop.price_min/1_000_000:.1f} млн)", "callback_data": f"calc_inst_prop_{property_id}"}])
+        buttons.append([{"text": f"🏦 Ипотека ({prop.price_min/1_000_000:.1f} млн)", "callback_data": f"calc_mort_prop_{property_id}"}])
+        buttons.append([{"text": f"💹 ROI ({prop.price_min/1_000_000:.1f} млн)", "callback_data": f"calc_roi_prop_{property_id}"}])
+    
+    buttons.append([{"text": "🔢 Ввести свою сумму", "callback_data": "calc_menu"}])
+    buttons.append([{"text": "🔙 К ЖК", "callback_data": f"open_property_{property_id}"}])
+    
+    await send_message_with_buttons(chat_id, text, buttons)
+
+
+async def handle_calc_installment_for_property(chat_id: int, property_id: int):
+    """Рассрочка с данными ЖК"""
+    prop = get_property(property_id)
+    if not prop or not prop.price_min:
+        await send_message(chat_id, "❌ Нет данных о цене")
+        return
+    
+    price = prop.price_min
+    
+    # Используем условия рассрочки из ЖК или дефолтные
+    default_pv = prop.installment_min_pv if prop.installment_min_pv else 30
+    
+    update_user_state(chat_id, "calc_installment_pv", {"price": price, "property_id": property_id})
+    
+    text = f"📅 <b>Рассрочка: {prop.name}</b>\n\n"
+    text += f"💰 Стоимость: {format_money(price)}\n\n"
+    
+    if prop.installment_min_pv is not None:
+        text += f"ℹ️ Условия застройщика: ПВ от {prop.installment_min_pv:.0f}%"
+        if prop.installment_max_months:
+            text += f", до {prop.installment_max_months} мес"
+        text += "\n\n"
+    
+    text += "Выбери первоначальный взнос:"
+    
+    # Кнопки ПВ — выделяем рекомендуемый
+    pv_buttons = []
+    for pv in [10, 20, 30, 40, 50]:
+        label = f"{pv}%"
+        if prop.installment_min_pv and pv == int(prop.installment_min_pv):
+            label = f"✓ {pv}%"
+        pv_buttons.append({"text": label, "callback_data": f"inst_pv_{pv}"})
+    
+    buttons = [
+        pv_buttons[:3],
+        pv_buttons[3:],
+        [{"text": "🔙 Назад", "callback_data": f"calc_for_{property_id}"}]
+    ]
+    
+    await send_message_with_buttons(chat_id, text, buttons)
+
+
+async def handle_calc_mortgage_for_property(chat_id: int, property_id: int):
+    """Ипотека с данными ЖК"""
+    prop = get_property(property_id)
+    if not prop or not prop.price_min:
+        await send_message(chat_id, "❌ Нет данных о цене")
+        return
+    
+    price = prop.price_min
+    update_user_state(chat_id, "calc_mortgage_pv", {"price": price, "property_id": property_id})
+    
+    text = f"🏦 <b>Ипотека: {prop.name}</b>\n\n"
+    text += f"💰 Стоимость: {format_money(price)}\n\n"
+    text += "Выбери первоначальный взнос:"
+    
+    buttons = [
+        [{"text": "20%", "callback_data": "mort_pv_20"}, {"text": "30%", "callback_data": "mort_pv_30"}, {"text": "50%", "callback_data": "mort_pv_50"}],
+        [{"text": "🔙 Назад", "callback_data": f"calc_for_{property_id}"}]
+    ]
+    
+    await send_message_with_buttons(chat_id, text, buttons)
+
+
+async def handle_calc_roi_for_property(chat_id: int, property_id: int):
+    """ROI с данными ЖК"""
+    prop = get_property(property_id)
+    if not prop or not prop.price_min:
+        await send_message(chat_id, "❌ Нет данных о цене")
+        return
+    
+    price = prop.price_min
+    update_user_state(chat_id, "calc_roi_rent", {"price": price, "property_id": property_id})
+    
+    text = f"💹 <b>Доходность: {prop.name}</b>\n\n"
+    text += f"💰 Стоимость: {format_money(price)}\n\n"
+    text += "Введи ставку аренды в сутки:"
+    
+    buttons = [
+        [{"text": "2000 ₽", "callback_data": "roi_rent_2000"}, {"text": "3000 ₽", "callback_data": "roi_rent_3000"}, {"text": "4000 ₽", "callback_data": "roi_rent_4000"}],
+        [{"text": "5000 ₽", "callback_data": "roi_rent_5000"}, {"text": "7000 ₽", "callback_data": "roi_rent_7000"}],
+        [{"text": "🔙 Назад", "callback_data": f"calc_for_{property_id}"}]
+    ]
+    
+    await send_message_with_buttons(chat_id, text, buttons)

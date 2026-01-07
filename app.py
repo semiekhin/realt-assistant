@@ -26,7 +26,9 @@ from bot.handlers.calculators import (
     handle_calc_installment_pv, handle_calc_installment_result, handle_calc_mortgage_start,
     handle_calc_mortgage_price, handle_calc_mortgage_pv, handle_calc_mortgage_years,
     handle_calc_mortgage_result, handle_calc_roi_start, handle_calc_roi_price,
-    handle_calc_roi_rent, handle_calc_roi_result, parse_price
+    handle_calc_roi_rent, handle_calc_roi_result, parse_price,
+    handle_calc_for_property, handle_calc_installment_for_property,
+    handle_calc_mortgage_for_property, handle_calc_roi_for_property
 )
 
 app = FastAPI(title="Realt Assistant", version="0.4.0")
@@ -110,6 +112,20 @@ async def process_callback(callback: Dict[str, Any]):
     elif data.startswith("roi_occ_"):
         occ = float(data.replace("roi_occ_", ""))
         await handle_calc_roi_result(chat_id, occ)
+
+    # Калькуляторы с привязкой к ЖК
+    elif data.startswith("calc_for_"):
+        property_id = int(data.replace("calc_for_", ""))
+        await handle_calc_for_property(chat_id, property_id)
+    elif data.startswith("calc_inst_prop_"):
+        property_id = int(data.replace("calc_inst_prop_", ""))
+        await handle_calc_installment_for_property(chat_id, property_id)
+    elif data.startswith("calc_mort_prop_"):
+        property_id = int(data.replace("calc_mort_prop_", ""))
+        await handle_calc_mortgage_for_property(chat_id, property_id)
+    elif data.startswith("calc_roi_prop_"):
+        property_id = int(data.replace("calc_roi_prop_", ""))
+        await handle_calc_roi_for_property(chat_id, property_id)
 
     # Работа с ЖК
     elif data.startswith("open_property_"):

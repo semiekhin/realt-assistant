@@ -76,7 +76,8 @@ async def handle_open_property(chat_id: int, property_id: int):
     
     # Действия
     buttons.append([
-        {"text": "📄 Создать КП", "callback_data": f"kp_for_{property_id}"},
+        {"text": "📄 КП", "callback_data": f"kp_for_{property_id}"},
+        {"text": "🧮 Расчёт", "callback_data": f"calc_for_{property_id}"},
         {"text": "📋 Выжимка", "callback_data": f"summary_{property_id}"}
     ])
     
