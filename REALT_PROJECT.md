@@ -64,12 +64,15 @@ find /opt/realt-assistant -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 │       ├── start.py           # /start, меню
 │       ├── add_property.py    # Добавление ЖК
 │       ├── query.py           # Поиск, просмотр ЖК
-│       └── kp.py              # Генерация КП с выбором стиля
+│       ├── kp.py              # Генерация КП с выбором стиля
+│       └── calculators.py     # Калькуляторы рассрочки/ипотеки/ROI
 │
 ├── services/
 │   ├── telegram.py            # Telegram API
-│   ├── llm.py                 # OpenAI API
-│   ├── parser.py              # Парсинг файлов (PDF, Excel, DOCX, images)
+│   ├── llm.py                 # OpenAI API + промпт извлечения данных
+│   ├── parser.py              # Старый парсер (не используется)
+│   ├── parser_v2.py           # Vision-first парсер (PDF → картинки → GPT-4o)
+│   ├── calculators.py         # Расчёты рассрочки/ипотеки/ROI
 │   ├── content_composer.py    # AI-генерация контента для документов
 │   ├── kp_generator_v2.py     # PDF рендеринг с динамическими стилями
 │   ├── pdf_styles.py          # 6 стилей оформления
@@ -78,7 +81,7 @@ find /opt/realt-assistant -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 │
 ├── db/
 │   ├── database.py            # SQLite операции
-│   └── models.py              # Dataclass модели
+│   └── models.py              # Dataclass модели + to_summary/to_full_info
 │
 └── data/
     ├── assistant.db           # SQLite база
@@ -88,26 +91,33 @@ find /opt/realt-assistant -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 
 ---
 
-## ✅ Реализованный функционал (v0.2)
+## ✅ Реализованный функционал (v0.4)
 
 ### Управление ЖК
 - Добавление ЖК с автопарсингом файлов
+- **Vision-first парсинг** — PDF как изображения через GPT-4o
+- Полная карточка для проверки риэлтором
 - Просмотр списка ЖК
 - Карточка ЖК с документами
 - Удаление ЖК
 
-### Парсинг файлов
-- PDF (текст через PyMuPDF)
+### Парсинг файлов (parser_v2.py)
+- **PDF → изображения страниц → Vision API** (видим таблицы, планировки!)
 - Excel (pandas)
-- DOCX (python-docx)
-- Изображения (GPT-4 Vision)
-- LLM извлекает структурированные данные
+- DOCX (python-docx + таблицы)
+- Изображения (GPT-4o Vision)
+- LLM извлекает структурированные данные с запретом галлюцинаций
 
 ### Генерация КП
 - Content Composer — AI создаёт продающий контент
 - 6 стилей: premium, business, corporate, modern, minimal, warm
 - Выбор стиля кнопками
 - Динамический ColorBlock (автоподбор шрифта)
+
+### Калькуляторы
+- **Рассрочка** — расчёт ежемесячного платежа
+- **Ипотека** — 4 программы (стандартная, семейная, IT, господдержка)
+- **ROI** — доходность инвестиций
 
 ### Поиск
 - В контексте ЖК: "что есть до 15 млн?"
@@ -120,12 +130,17 @@ find /opt/realt-assistant -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 -- users
 id, telegram_id, username, first_name, last_name, state, state_data, created_at
 
--- properties
-id, user_id, name, address, developer, completion_date,
+-- properties  
+id, user_id, name, address, city, developer, completion_date,
 price_min, price_max, price_per_sqm_min, price_per_sqm_max,
 apartment_types, area_min, area_max,
-payment_options, installment_terms, mortgage_info, commission,
-description, features, raw_data, created_at, updated_at
+payment_options, installment_terms, mortgage_info,
+-- структурированная рассрочка (v0.3.0)
+installment_min_pv, installment_max_months, installment_markup,
+-- локация и особенности (v0.4.0)
+distance_to_sea, territory_area, hotel_operator,
+commission, description, features, raw_data, 
+created_at, updated_at
 
 -- property_files
 id, property_id, user_id, file_id, file_name, file_type, file_path, extracted_text, created_at
@@ -147,6 +162,18 @@ id, property_id, user_id, file_id, file_name, file_type, file_path, extracted_te
 ---
 
 ## 📋 История версий
+
+### v0.4.0 (07.01.2026 вечер)
+- **Vision-first парсер** — PDF как изображения через GPT-4o
+- Запрет галлюцинаций в промпте LLM
+- Сбор ВСЕХ цен (min/max) из всех источников
+- Новые поля: distance_to_sea, territory_area, hotel_operator
+- Полная карточка ЖК (to_full_info) для проверки
+
+### v0.3.0 (07.01.2026)
+- Калькуляторы: рассрочка, ипотека (4 программы), ROI
+- Структурированные поля рассрочки для калькулятора
+- Миграция БД
 
 ### v0.2.0 (07.01.2026)
 - Content Composer — AI создаёт продающий контент
