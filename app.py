@@ -39,13 +39,13 @@ from bot.handlers.calculators import (
     handle_calc_mortgage_for_property, handle_calc_roi_for_property
 )
 
-app = FastAPI(title="Realt Assistant", version="0.4.0")
+app = FastAPI(title="Realt Assistant", version="0.5.0")
 
 
 @app.on_event("startup")
 async def startup():
     init_db()
-    print("[APP] Started v0.4.2 — Calculators")
+    print("[APP] Started v0.5.0 — Calculators")
 
 
 @app.get("/")
