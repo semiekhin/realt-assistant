@@ -32,10 +32,15 @@ class Property:
     area_min: Optional[float] = None  # минимальная площадь
     area_max: Optional[float] = None
     
-    # Условия покупки
+    # Условия покупки (текстовые — legacy)
     payment_options: str = ""  # "100%, рассрочка, ипотека"
-    installment_terms: str = ""  # "30% + 24 мес"
+    installment_terms: str = ""  # "30% + 24 мес" (текстовое описание)
     mortgage_info: str = ""
+    
+    # Условия рассрочки (структурированные — для калькулятора)
+    installment_min_pv: Optional[float] = None  # Мин. ПВ в % (10, 20, 30)
+    installment_max_months: Optional[int] = None  # Макс. срок в месяцах (18, 24, 36)
+    installment_markup: Optional[float] = None  # Удорожание в % (0, 5, 10)
     
     # Комиссия риэлтора
     commission: str = ""  # "3%", "150 000 ₽"
@@ -68,7 +73,17 @@ class Property:
         if self.apartment_types:
             lines.append(f"🏠 Квартиры: {self.apartment_types}")
         
-        if self.installment_terms:
+        # Условия рассрочки — структурированные
+        if self.installment_min_pv is not None:
+            installment_line = f"💳 Рассрочка: ПВ от {self.installment_min_pv:.0f}%"
+            if self.installment_max_months:
+                installment_line += f", до {self.installment_max_months} мес"
+            if self.installment_markup is not None and self.installment_markup > 0:
+                installment_line += f", +{self.installment_markup:.0f}%"
+            elif self.installment_markup == 0:
+                installment_line += ", без удорожания"
+            lines.append(installment_line)
+        elif self.installment_terms:
             lines.append(f"💳 Рассрочка: {self.installment_terms}")
         
         if self.commission:
