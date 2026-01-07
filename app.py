@@ -37,7 +37,7 @@ app = FastAPI(title="Realt Assistant", version="0.4.0")
 @app.on_event("startup")
 async def startup():
     init_db()
-    print("[APP] Started v0.3.0 — Calculators")
+    print("[APP] Started v0.4.2 — Calculators")
 
 
 @app.get("/")
