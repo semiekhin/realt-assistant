@@ -225,26 +225,30 @@ async def quick_chat(message: str, context: str = "") -> str:
 
 import re
 
-UNIVERSAL_PROMPT = """Ты — умный ассистент риэлтора. Отвечаешь как опытный коллега.
+UNIVERSAL_PROMPT = """Ты — умный ассистент риэлтора.
 
 Данные из документов:
 ---
 {chunks}
 ---
 
-Что можешь делать:
-1. Ответить текстом — просто отвечай
-2. Посчитать рассрочку — верни JSON: {{"action": "calc_installment", "price": число, "pv": процент, "months": число}}
-3. Посчитать ипотеку — верни JSON: {{"action": "calc_mortgage", "price": число, "pv": процент, "years": число, "program": "standard|family|it"}}
-4. Посчитать ROI — верни JSON: {{"action": "calc_roi", "price": число, "rent": число, "occupancy": процент}}
-5. Сгенерировать КП — верни JSON: {{"action": "generate_kp", "property_id": число, "query": "описание запроса"}}
-6. Отправить файл — верни JSON: {{"action": "send_file", "file_name": "имя файла"}}
+ВАЖНО: Если пользователь просит СДЕЛАТЬ/СОЗДАТЬ/СГЕНЕРИРОВАТЬ документ (КП, предложение, PDF) — ОБЯЗАТЕЛЬНО верни JSON!
+
+Действия:
+1. Вопрос/информация — отвечай текстом
+2. "сделай КП" / "создай предложение" — ВЕРНИ: {{"action": "generate_kp", "query": "что именно"}}
+3. "посчитай рассрочку" — ВЕРНИ: {{"action": "calc_installment", "price": число, "pv": процент, "months": число}}
+4. "посчитай ипотеку" — ВЕРНИ: {{"action": "calc_mortgage", "price": число, "pv": процент, "years": число, "program": "standard"}}
+5. "посчитай доходность/ROI" — ВЕРНИ: {{"action": "calc_roi", "price": число, "rent": число, "occupancy": процент}}
+6. "скинь файл/презентацию" — ВЕРНИ: {{"action": "send_file", "file_name": "название"}}
+
+Ключевые слова для generate_kp: кп, КП, предложение, коммерческое, сделай документ, создай pdf
+Ключевые слова для calc: рассрочка, ипотека, посчитай, расчёт, roi, доходность
 
 Правила:
+- Для КП ВСЕГДА возвращай JSON, НЕ пиши текст предложения сам
 - Данных нет — скажи честно
-- Нужно уточнить — спроси коротко
-- Для расчётов бери цены из данных если не указаны явно
-- Отвечай на русском, кратко, с эмодзи"""
+- Отвечай кратко, на русском"""
 
 
 async def universal_respond(query: str, chunks: list, history: list = None) -> dict:
@@ -306,3 +310,80 @@ def parse_llm_response(text: str) -> dict:
     
     # Если JSON не найден — это текстовый ответ
     return {"action": "text", "content": text}
+
+
+# === Генерация HTML документов ===
+
+GENERATE_HTML_PROMPT = """Ты — эксперт по созданию продающих коммерческих предложений для недвижимости.
+
+Данные об объекте:
+---
+{property_data}
+---
+
+Дополнительные данные из документов:
+---
+{chunks}
+---
+
+Запрос клиента: {query}
+
+Создай HTML-документ коммерческого предложения. Требования:
+1. Профессиональный, продающий стиль
+2. Акцент на преимуществах для клиента
+3. Конкретные цифры и факты
+4. Визуально привлекательный дизайн
+
+ВЕРНИ ТОЛЬКО HTML КОД с инлайн-стилями. Структура:
+- Шапка с названием ЖК
+- Ключевые преимущества
+- Характеристики объекта
+- Цены и условия покупки
+- Инфраструктура
+- Контактная информация (оставить плейсхолдер)
+
+Используй современный CSS: градиенты, скругления, тени.
+Цветовая схема: профессиональная (темно-синий, белый, акценты).
+HTML должен быть самодостаточным (inline styles)."""
+
+
+async def generate_html_document(property_data: str, chunks: list, query: str = "") -> Optional[str]:
+    """Генерирует HTML документ через LLM"""
+    if not client:
+        return None
+    
+    chunks_text = ""
+    if chunks:
+        for chunk in chunks:
+            chunks_text += f"{chunk.get('text', '')}\n\n"
+    
+    try:
+        response = await client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": GENERATE_HTML_PROMPT.format(
+                    property_data=property_data,
+                    chunks=chunks_text[:8000],
+                    query=query or "стандартное коммерческое предложение"
+                )},
+                {"role": "user", "content": f"Создай КП. {query}" if query else "Создай коммерческое предложение"}
+            ],
+            temperature=0.7,
+            max_tokens=4000
+        )
+        
+        html = response.choices[0].message.content.strip()
+        
+        # Убираем markdown обёртку если есть
+        if html.startswith("```html"):
+            html = html[7:]
+        if html.startswith("```"):
+            html = html[3:]
+        if html.endswith("```"):
+            html = html[:-3]
+        
+        return html.strip()
+        
+    except Exception as e:
+        print(f"[LLM] generate_html_document error: {e}")
+        return None

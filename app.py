@@ -11,7 +11,8 @@ from services.telegram import send_message, answer_callback, get_file_type
 
 from bot.handlers.start import handle_start, handle_help, handle_menu, handle_my_properties
 from db.database import save_message, get_chat_history
-from services.llm import universal_respond
+from services.llm import universal_respond, generate_html_document
+from services.html_to_pdf import html_to_pdf, wrap_html
 from services.rag import search as rag_search
 from services.calculators import (
     calc_installment, calc_mortgage, calc_roi,
@@ -289,10 +290,7 @@ async def execute_action(chat_id: int, result: dict, property_id: int = None):
     elif action == "generate_kp":
         prop_id = result.get("property_id") or property_id
         query = result.get("query", "")
-        if prop_id:
-            await handle_kp_for_property(chat_id, prop_id)
-        else:
-            await send_message(chat_id, "🏢 Сначала выбери ЖК для КП")
+        await generate_kp_universal(chat_id, prop_id, query)
     
     elif action == "send_file":
         file_name = result.get("file_name", "")
@@ -302,6 +300,80 @@ async def execute_action(chat_id: int, result: dict, property_id: int = None):
     else:
         await send_message(chat_id, "🤔 Не понял что делать")
 
+
+
+
+async def generate_kp_universal(chat_id: int, property_id: int = None, query: str = ""):
+    """Генерация КП через LLM → HTML → PDF"""
+    from db.database import get_property, get_property_files, get_user_properties
+    from services.telegram import send_document
+    
+    properties = get_user_properties(chat_id)
+    if not properties:
+        await send_message(chat_id, "🏢 Сначала добавь ЖК")
+        return
+    
+    prop = None
+    
+    # 1. Если указан property_id
+    if property_id:
+        prop = get_property(property_id)
+    
+    # 2. Ищем ЖК по названию в запросе
+    if not prop and query:
+        query_lower = query.lower()
+        for p in properties:
+            if p.name.lower() in query_lower or query_lower in p.name.lower():
+                prop = p
+                property_id = p.id
+                break
+    
+    # 3. Ищем в RAG и берём property_id из чанков
+    if not prop:
+        chunks = rag_search(chat_id, query or "коммерческое предложение", limit=5)
+        if chunks:
+            chunk_prop_id = chunks[0].get("metadata", {}).get("property_id")
+            if chunk_prop_id:
+                prop = get_property(chunk_prop_id)
+                property_id = chunk_prop_id
+    
+    # 4. Если один ЖК в базе — берём его
+    if not prop and len(properties) == 1:
+        prop = properties[0]
+        property_id = prop.id
+    
+    # 5. Если несколько ЖК и не понятно какой
+    if not prop:
+        names = ", ".join([p.name for p in properties[:5]])
+        await send_message(chat_id, f"🏢 Уточни для какого ЖК сделать КП:\n{names}")
+        return
+    
+    property_data = prop.to_full_info()
+    filename = f"KP_{prop.name}_{int(__import__('time').time())}.pdf"
+    
+    await send_message(chat_id, "⏳ Генерирую КП...")
+    
+    # RAG поиск для дополнительных данных
+    chunks = rag_search(chat_id, query or "коммерческое предложение", property_id=property_id, limit=10)
+    
+    # Генерируем HTML
+    html = await generate_html_document(property_data, chunks, query)
+    
+    if not html:
+        await send_message(chat_id, "❌ Ошибка генерации")
+        return
+    
+    # Оборачиваем в шаблон если нужно
+    html = wrap_html(html)
+    
+    # Конвертируем в PDF
+    pdf_path = html_to_pdf(html, filename)
+    
+    if pdf_path:
+        await send_document(chat_id, pdf_path, f"📄 {prop.name} — Коммерческое предложение")
+        save_message(chat_id, "assistant", f"📄 КП для {prop.name} готово")
+    else:
+        await send_message(chat_id, "❌ Ошибка создания PDF")
 
 
 if __name__ == "__main__":
