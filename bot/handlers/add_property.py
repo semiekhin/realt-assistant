@@ -10,7 +10,7 @@ from services.telegram import (
     download_file,
     get_file_type
 )
-from services.parser import extract_text, get_file_info
+from services.parser_v2 import extract_all as extract_text, get_file_info
 from services.llm import extract_property_data
 from db.database import (
     get_user_state,
@@ -153,6 +153,9 @@ async def handle_files_done(chat_id: int):
         installment_max_months=extracted_data.get("installment_max_months"),
         installment_markup=extracted_data.get("installment_markup"),
         commission=extracted_data.get("commission", ""),
+        distance_to_sea=extracted_data.get("distance_to_sea", ""),
+        territory_area=extracted_data.get("territory_area", ""),
+        hotel_operator=extracted_data.get("hotel_operator", ""),
         description=extracted_data.get("description", ""),
         features=extracted_data.get("features", ""),
         raw_data=json.dumps(extracted_data, ensure_ascii=False)

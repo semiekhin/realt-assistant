@@ -45,6 +45,11 @@ class Property:
     # Комиссия риэлтора
     commission: str = ""  # "3%", "150 000 ₽"
     
+    # Локация и особенности
+    distance_to_sea: str = ""  # "350 м"
+    territory_area: str = ""  # "9 га"
+    hotel_operator: str = ""  # "Lee Prime"
+    
     # Дополнительно
     description: str = ""  # Общее описание
     features: str = ""  # Особенности, инфраструктура
@@ -88,6 +93,13 @@ class Property:
         
         if self.commission:
             lines.append(f"💵 Комиссия: {self.commission}")
+        
+        if self.distance_to_sea:
+            lines.append(f"🏖 До моря: {self.distance_to_sea}")
+        if self.territory_area:
+            lines.append(f"🌳 Территория: {self.territory_area}")
+        if self.hotel_operator:
+            lines.append(f"🏨 Оператор: {self.hotel_operator}")
         
         return "\n".join(lines)
 
