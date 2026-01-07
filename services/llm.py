@@ -219,3 +219,90 @@ async def quick_chat(message: str, context: str = "") -> str:
     except Exception as e:
         print(f"[LLM] quick_chat error: {e}")
         return "❌ Произошла ошибка"
+
+
+# === Универсальный handler (Этап 2) ===
+
+import re
+
+UNIVERSAL_PROMPT = """Ты — умный ассистент риэлтора. Отвечаешь как опытный коллега.
+
+Данные из документов:
+---
+{chunks}
+---
+
+Что можешь делать:
+1. Ответить текстом — просто отвечай
+2. Посчитать рассрочку — верни JSON: {{"action": "calc_installment", "price": число, "pv": процент, "months": число}}
+3. Посчитать ипотеку — верни JSON: {{"action": "calc_mortgage", "price": число, "pv": процент, "years": число, "program": "standard|family|it"}}
+4. Посчитать ROI — верни JSON: {{"action": "calc_roi", "price": число, "rent": число, "occupancy": процент}}
+5. Сгенерировать КП — верни JSON: {{"action": "generate_kp", "property_id": число, "query": "описание запроса"}}
+6. Отправить файл — верни JSON: {{"action": "send_file", "file_name": "имя файла"}}
+
+Правила:
+- Данных нет — скажи честно
+- Нужно уточнить — спроси коротко
+- Для расчётов бери цены из данных если не указаны явно
+- Отвечай на русском, кратко, с эмодзи"""
+
+
+async def universal_respond(query: str, chunks: list, history: list = None) -> dict:
+    """Универсальный ответ на любой запрос"""
+    if not client:
+        return {"action": "text", "content": "❌ Сервис временно недоступен"}
+    
+    # Формируем контекст из чанков
+    chunks_text = ""
+    if chunks:
+        for chunk in chunks:
+            meta = chunk.get("metadata", {})
+            prop_name = meta.get("property_name", "")
+            chunks_text += f"[{prop_name}] {chunk['text']}\n\n"
+    else:
+        chunks_text = "(нет данных)"
+    
+    # Собираем сообщения
+    messages = [
+        {"role": "system", "content": UNIVERSAL_PROMPT.format(chunks=chunks_text[:12000])}
+    ]
+    
+    # Добавляем историю
+    if history:
+        for msg in history[-6:]:  # последние 6 сообщений
+            messages.append({"role": msg["role"], "content": msg["content"]})
+    
+    messages.append({"role": "user", "content": query})
+    
+    try:
+        response = await client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        return parse_llm_response(result_text)
+        
+    except Exception as e:
+        print(f"[LLM] universal_respond error: {e}")
+        return {"action": "text", "content": "❌ Произошла ошибка"}
+
+
+def parse_llm_response(text: str) -> dict:
+    """Парсим ответ LLM — текст или JSON с action"""
+    
+    # Ищем JSON в ответе
+    json_match = re.search(r'\{[^{}]*"action"[^{}]*\}', text)
+    
+    if json_match:
+        try:
+            action_data = json.loads(json_match.group())
+            if "action" in action_data:
+                return action_data
+        except json.JSONDecodeError:
+            pass
+    
+    # Если JSON не найден — это текстовый ответ
+    return {"action": "text", "content": text}

@@ -10,6 +10,14 @@ from bot.states import States, is_exit_command
 from services.telegram import send_message, answer_callback, get_file_type
 
 from bot.handlers.start import handle_start, handle_help, handle_menu, handle_my_properties
+from db.database import save_message, get_chat_history
+from services.llm import universal_respond
+from services.rag import search as rag_search
+from services.calculators import (
+    calc_installment, calc_mortgage, calc_roi,
+    format_installment_result, format_mortgage_result, format_roi_result
+)
+
 from bot.handlers.add_property import (
     handle_add_property_start, handle_property_name, handle_file_upload,
     handle_files_done, handle_confirm_property, handle_property_correction, handle_cancel
@@ -174,6 +182,7 @@ async def process_message(message: Dict[str, Any]):
     text = (message.get("text") or "").strip()
     file_id, file_name, file_type = get_file_type(message)
 
+    # Команды
     if text and is_exit_command(text):
         await handle_cancel(chat_id)
         return
@@ -192,6 +201,7 @@ async def process_message(message: Dict[str, Any]):
 
     state, state_data = get_user_state(chat_id)
 
+    # FSM для добавления ЖК (оставляем)
     if state == States.ADD_PROPERTY_NAME:
         if text:
             await handle_property_name(chat_id, text)
@@ -212,86 +222,86 @@ async def process_message(message: Dict[str, Any]):
             await handle_property_correction(chat_id, text)
         return
 
-    # Калькуляторы — ввод текстом
-    if state == "calc_installment_price":
-        if text:
-            await handle_calc_installment_price(chat_id, text)
-        return
-    if state == "calc_installment_pv":
-        if text:
-            try:
-                pv = float(text.replace("%", "").strip())
-                await handle_calc_installment_pv(chat_id, pv)
-            except:
-                await send_message(chat_id, "❌ Введи число, например: 30")
-        return
-    if state == "calc_installment_months":
-        if text:
-            try:
-                months = int(text.replace("мес", "").replace("м", "").strip())
-                await handle_calc_installment_result(chat_id, months)
-            except:
-                await send_message(chat_id, "❌ Введи число месяцев, например: 18")
-        return
-    if state == "calc_mortgage_price":
-        if text:
-            await handle_calc_mortgage_price(chat_id, text)
-        return
-    if state == "calc_mortgage_pv":
-        if text:
-            try:
-                pv = float(text.replace("%", "").strip())
-                await handle_calc_mortgage_pv(chat_id, pv)
-            except:
-                await send_message(chat_id, "❌ Введи число, например: 20")
-        return
-    if state == "calc_mortgage_years":
-        if text:
-            try:
-                years = int(text.replace("лет", "").replace("г", "").strip())
-                await handle_calc_mortgage_years(chat_id, years)
-            except:
-                await send_message(chat_id, "❌ Введи число лет, например: 20")
-        return
-    if state == "calc_roi_price":
-        if text:
-            await handle_calc_roi_price(chat_id, text)
-        return
-    if state == "calc_roi_rent":
-        if text:
-            rent = parse_price(text)
-            if rent > 0:
-                await handle_calc_roi_rent(chat_id, rent)
-            else:
-                await send_message(chat_id, "❌ Введи число, например: 3500")
-        return
-    if state == "calc_roi_occupancy":
-        if text:
-            try:
-                occ = float(text.replace("%", "").strip())
-                await handle_calc_roi_result(chat_id, occ)
-            except:
-                await send_message(chat_id, "❌ Введи число, например: 70")
-        return
-
-    if state == "working_property":
-        property_id = state_data.get("property_id")
-        if property_id and text:
-            await handle_property_query(chat_id, property_id, text)
-            return
-    if state == "kp_query":
-        property_id = state_data.get("property_id")
-        if property_id and text:
-            await handle_kp_query_received(chat_id, property_id, text)
-            return
-    if state == "kp_style":
-        await send_message(chat_id, "👆 Выбери стиль кнопкой выше")
-        return
-
+    # Универсальный handler — всё остальное
     if text:
-        await handle_search_all(chat_id, text)
+        await handle_universal(chat_id, text, state_data)
     elif file_id:
         await send_message(chat_id, "📁 Чтобы добавить файл, сначала начни /add")
+
+
+async def handle_universal(chat_id: int, text: str, state_data: dict = None):
+    """Универсальный обработчик через RAG + LLM"""
+    
+    # Сохраняем сообщение пользователя
+    save_message(chat_id, "user", text)
+    
+    # RAG поиск
+    property_id = state_data.get("property_id") if state_data else None
+    chunks = rag_search(chat_id, text, property_id=property_id, limit=10)
+    
+    # История диалога
+    history = get_chat_history(chat_id, limit=6)
+    
+    # LLM ответ
+    result = await universal_respond(text, chunks, history)
+    
+    # Выполняем действие
+    await execute_action(chat_id, result, property_id)
+
+
+async def execute_action(chat_id: int, result: dict, property_id: int = None):
+    """Выполнить действие из LLM"""
+    action = result.get("action", "text")
+    
+    if action == "text":
+        response = result.get("content", "🤔 Не понял запрос")
+        save_message(chat_id, "assistant", response)
+        await send_message(chat_id, response)
+    
+    elif action == "calc_installment":
+        price = result.get("price", 10000000)
+        pv = result.get("pv", 30)
+        months = result.get("months", 12)
+        calc_result = calc_installment(price, pv, months)
+        response = format_installment_result(calc_result)
+        save_message(chat_id, "assistant", response)
+        await send_message(chat_id, response)
+    
+    elif action == "calc_mortgage":
+        price = result.get("price", 10000000)
+        pv = result.get("pv", 20)
+        years = result.get("years", 20)
+        program = result.get("program", "standard")
+        calc_result = calc_mortgage(price, pv, years, program)
+        response = format_mortgage_result(calc_result)
+        save_message(chat_id, "assistant", response)
+        await send_message(chat_id, response)
+    
+    elif action == "calc_roi":
+        price = result.get("price", 10000000)
+        rent = result.get("rent", 3000)
+        occupancy = result.get("occupancy", 70)
+        calc_result = calc_roi(price, rent, occupancy)
+        response = format_roi_result(calc_result)
+        save_message(chat_id, "assistant", response)
+        await send_message(chat_id, response)
+    
+    elif action == "generate_kp":
+        prop_id = result.get("property_id") or property_id
+        query = result.get("query", "")
+        if prop_id:
+            await handle_kp_for_property(chat_id, prop_id)
+        else:
+            await send_message(chat_id, "🏢 Сначала выбери ЖК для КП")
+    
+    elif action == "send_file":
+        file_name = result.get("file_name", "")
+        await send_message(chat_id, f"📁 Ищу файл: {file_name}...")
+        # TODO: поиск и отправка файла
+    
+    else:
+        await send_message(chat_id, "🤔 Не понял что делать")
+
 
 
 if __name__ == "__main__":

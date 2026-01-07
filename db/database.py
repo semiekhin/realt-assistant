@@ -83,6 +83,17 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(telegram_id)
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     
     conn.commit()
     conn.close()
@@ -341,6 +352,37 @@ def attach_files_to_property(user_id: int, property_id: int):
         SET property_id = ? 
         WHERE user_id = ? AND property_id IS NULL
     """, (property_id, user_id))
+    conn.commit()
+    conn.close()
+
+
+
+# === Chat History ===
+
+def save_message(user_id: int, role: str, content: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?)", (user_id, role, content))
+    conn.commit()
+    conn.close()
+
+
+def get_chat_history(user_id: int, limit: int = 10) -> List[dict]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT role, content, created_at FROM chat_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", (user_id, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    messages = []
+    for row in reversed(rows):
+        messages.append({"role": row["role"], "content": row["content"]})
+    return messages
+
+
+def clear_chat_history(user_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
