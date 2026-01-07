@@ -165,7 +165,7 @@ async def handle_files_done(chat_id: int):
     update_user_state(chat_id, States.ADD_PROPERTY_CONFIRM, {"property_id": property_id})
     
     # Формируем расширенную сводку с условиями рассрочки
-    text = f"✅ <b>ЖК добавлен!</b>\n\n{prop.to_summary()}"
+    text = f"✅ <b>ЖК добавлен!</b>\n\n{prop.to_full_info()}"
     
     # Показываем условия рассрочки для подтверждения
     if prop.installment_min_pv is not None or prop.installment_max_months is not None:

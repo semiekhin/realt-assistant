@@ -143,3 +143,86 @@ class User:
     
     def set_state_data(self, data: dict):
         self.state_data = json.dumps(data, ensure_ascii=False)
+
+    def to_full_info(self) -> str:
+        """Полная информация для проверки риэлтором"""
+        lines = [f"🏢 <b>{self.name}</b>", ""]
+        
+        # Локация
+        lines.append("📍 <b>Локация:</b>")
+        if self.address:
+            lines.append(f"   Адрес: {self.address}")
+        if self.distance_to_sea:
+            lines.append(f"   До моря: {self.distance_to_sea}")
+        if self.territory_area:
+            lines.append(f"   Территория: {self.territory_area}")
+        
+        # Застройщик и сроки
+        lines.append("")
+        lines.append("🏗 <b>Застройщик и сроки:</b>")
+        if self.developer:
+            lines.append(f"   Застройщик: {self.developer}")
+        if self.completion_date:
+            lines.append(f"   Сдача: {self.completion_date}")
+        if self.hotel_operator:
+            lines.append(f"   Оператор: {self.hotel_operator}")
+        
+        # Цены
+        lines.append("")
+        lines.append("💰 <b>Цены:</b>")
+        if self.price_min and self.price_max:
+            lines.append(f"   Диапазон: {self.price_min/1_000_000:.1f} – {self.price_max/1_000_000:.1f} млн ₽")
+        elif self.price_min:
+            lines.append(f"   От: {self.price_min/1_000_000:.1f} млн ₽")
+        if self.price_per_sqm_min and self.price_per_sqm_max:
+            lines.append(f"   За м²: {self.price_per_sqm_min:,} – {self.price_per_sqm_max:,} ₽".replace(",", " "))
+        elif self.price_per_sqm_min:
+            lines.append(f"   За м²: от {self.price_per_sqm_min:,} ₽".replace(",", " "))
+        
+        # Квартиры
+        lines.append("")
+        lines.append("🏠 <b>Квартиры:</b>")
+        if self.apartment_types:
+            lines.append(f"   Типы: {self.apartment_types}")
+        if self.area_min and self.area_max:
+            lines.append(f"   Площади: {self.area_min:.1f} – {self.area_max:.1f} м²")
+        elif self.area_min:
+            lines.append(f"   Площадь от: {self.area_min:.1f} м²")
+        
+        # Условия покупки
+        lines.append("")
+        lines.append("💳 <b>Условия покупки:</b>")
+        if self.payment_options:
+            lines.append(f"   Способы: {self.payment_options}")
+        if self.installment_min_pv is not None:
+            inst = f"   Рассрочка: ПВ от {self.installment_min_pv:.0f}%"
+            if self.installment_max_months:
+                inst += f", до {self.installment_max_months} мес"
+            if self.installment_markup is not None:
+                if self.installment_markup == 0:
+                    inst += ", 0%"
+                else:
+                    inst += f", +{self.installment_markup:.0f}%"
+            lines.append(inst)
+        elif self.installment_terms:
+            lines.append(f"   Рассрочка: {self.installment_terms}")
+        if self.mortgage_info:
+            lines.append(f"   Ипотека: {self.mortgage_info}")
+        if self.commission:
+            lines.append(f"   Комиссия: {self.commission}")
+        else:
+            lines.append(f"   Комиссия: не указана")
+        
+        # Описание
+        if self.description:
+            lines.append("")
+            lines.append("📝 <b>Описание:</b>")
+            lines.append(f"   {self.description}")
+        
+        # Особенности
+        if self.features:
+            lines.append("")
+            lines.append("✨ <b>Особенности:</b>")
+            lines.append(f"   {self.features}")
+        
+        return "\n".join(lines)
