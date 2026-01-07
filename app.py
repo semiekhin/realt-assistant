@@ -29,7 +29,7 @@ from bot.handlers.calculators import (
     handle_calc_roi_rent, handle_calc_roi_result, parse_price
 )
 
-app = FastAPI(title="Realt Assistant", version="0.3.0")
+app = FastAPI(title="Realt Assistant", version="0.4.0")
 
 
 @app.on_event("startup")
