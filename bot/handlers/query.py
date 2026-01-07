@@ -5,6 +5,7 @@ from typing import Optional
 
 from services.telegram import send_message, send_message_with_buttons, send_document
 from services.llm import answer_query
+from services.rag import search as rag_search
 from db.database import (
     get_user_properties,
     get_property,
@@ -182,7 +183,7 @@ async def handle_confirm_delete(chat_id: int, property_id: int):
 
 
 async def handle_property_query(chat_id: int, property_id: int, query: str):
-    """Вопрос в контексте конкретного ЖК"""
+    """Вопрос в контексте конкретного ЖК — через RAG"""
     
     prop = get_property(property_id)
     if not prop:
@@ -191,13 +192,22 @@ async def handle_property_query(chat_id: int, property_id: int, query: str):
     
     await send_message(chat_id, "🔍 Ищу...")
     
-    # Собираем контекст только этого ЖК
-    files = get_property_files(property_id)
+    # RAG поиск
+    chunks = rag_search(chat_id, query, property_id=property_id, limit=10)
+    
+    # Формируем контекст
     context = prop.to_summary() + "\n\n"
     
-    for f in files:
-        if f.extracted_text and len(f.extracted_text) > 50:
-            context += f"--- {f.file_name} ---\n{f.extracted_text[:3000]}\n\n"
+    if chunks:
+        context += "ДЕТАЛЬНЫЕ ДАННЫЕ (из документов):\n\n"
+        for chunk in chunks:
+            context += f"{chunk['text']}\n\n"
+    else:
+        # Fallback на старый метод если RAG пустой
+        files = get_property_files(property_id)
+        for f in files:
+            if f.extracted_text and len(f.extracted_text) > 50:
+                context += f"--- {f.file_name} ---\n{f.extracted_text[:3000]}\n\n"
     
     response = await answer_query(query, context)
     
@@ -219,7 +229,7 @@ async def handle_property_query(chat_id: int, property_id: int, query: str):
 
 
 async def handle_search_all(chat_id: int, query: str):
-    """Поиск по всем ЖК"""
+    """Поиск по всем ЖК — через RAG"""
     
     properties = get_user_properties(chat_id)
     
@@ -229,17 +239,23 @@ async def handle_search_all(chat_id: int, query: str):
     
     await send_message(chat_id, "🔍 Ищу по всей базе...")
     
-    # Собираем контекст всех ЖК
+    # RAG поиск по всем ЖК
+    chunks = rag_search(chat_id, query, property_id=None, limit=15)
+    
+    # Формируем контекст
     context_parts = []
     for prop in properties:
-        part = prop.to_summary()
-        files = get_property_files(prop.id)
-        for f in files:
-            if f.extracted_text and len(f.extracted_text) > 50:
-                part += f"\n--- {f.file_name} ---\n{f.extracted_text[:2000]}"
-        context_parts.append(part)
+        context_parts.append(prop.to_summary())
     
-    context = "\n\n========\n\n".join(context_parts)
+    context = "СПИСОК ЖК:\n" + "\n\n".join(context_parts)
+    
+    if chunks:
+        context += "\n\nДЕТАЛЬНЫЕ ДАННЫЕ (из документов):\n\n"
+        for chunk in chunks:
+            meta = chunk.get('metadata', {})
+            prop_name = meta.get('property_name', '')
+            context += f"[{prop_name}] {chunk['text']}\n\n"
+    
     response = await answer_query(query, context)
     
     await send_message(chat_id, response)

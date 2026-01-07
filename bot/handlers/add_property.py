@@ -12,6 +12,7 @@ from services.telegram import (
 )
 from services.parser_v2 import extract_all as extract_text, get_file_info
 from services.llm import extract_property_data
+from services.rag import add_document
 from db.database import (
     get_user_state,
     update_user_state,
@@ -130,6 +131,11 @@ async def handle_files_done(chat_id: int):
         return
     property_id = create_property(chat_id, property_name)
     attach_files_to_property(chat_id, property_id)
+    
+    # Индексируем в RAG
+    for pf in pending_files:
+        if pf.extracted_text and not pf.extracted_text.startswith("["):
+            add_document(chat_id, property_id, property_name, pf.file_name, pf.extracted_text)
     
     # Сохраняем все данные включая условия рассрочки
     update_property(
