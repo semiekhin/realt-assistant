@@ -103,47 +103,6 @@ class Property:
         
         return "\n".join(lines)
 
-
-@dataclass
-class PropertyFile:
-    """Загруженный файл ЖК"""
-    id: Optional[int] = None
-    property_id: int = 0
-    user_id: int = 0
-    
-    file_id: str = ""  # Telegram file_id
-    file_name: str = ""
-    file_type: str = ""  # document, photo, spreadsheet
-    file_path: str = ""  # локальный путь
-    
-    extracted_text: str = ""  # извлечённый текст
-    
-    created_at: Optional[datetime] = None
-
-
-@dataclass 
-class User:
-    """Пользователь (риэлтор)"""
-    id: Optional[int] = None
-    telegram_id: int = 0
-    username: str = ""
-    first_name: str = ""
-    last_name: str = ""
-    
-    # Состояние диалога
-    state: str = ""  # текущее состояние FSM
-    state_data: str = ""  # JSON с данными состояния
-    
-    created_at: Optional[datetime] = None
-    
-    def get_state_data(self) -> dict:
-        if self.state_data:
-            return json.loads(self.state_data)
-        return {}
-    
-    def set_state_data(self, data: dict):
-        self.state_data = json.dumps(data, ensure_ascii=False)
-
     def to_full_info(self) -> str:
         """Полная информация для проверки риэлтором"""
         lines = [f"🏢 <b>{self.name}</b>", ""]
@@ -226,3 +185,44 @@ class User:
             lines.append(f"   {self.features}")
         
         return "\n".join(lines)
+
+
+@dataclass
+class PropertyFile:
+    """Загруженный файл ЖК"""
+    id: Optional[int] = None
+    property_id: int = 0
+    user_id: int = 0
+    
+    file_id: str = ""  # Telegram file_id
+    file_name: str = ""
+    file_type: str = ""  # document, photo, spreadsheet
+    file_path: str = ""  # локальный путь
+    
+    extracted_text: str = ""  # извлечённый текст
+    
+    created_at: Optional[datetime] = None
+
+
+@dataclass 
+class User:
+    """Пользователь (риэлтор)"""
+    id: Optional[int] = None
+    telegram_id: int = 0
+    username: str = ""
+    first_name: str = ""
+    last_name: str = ""
+    
+    # Состояние диалога
+    state: str = ""  # текущее состояние FSM
+    state_data: str = ""  # JSON с данными состояния
+    
+    created_at: Optional[datetime] = None
+    
+    def get_state_data(self) -> dict:
+        if self.state_data:
+            return json.loads(self.state_data)
+        return {}
+    
+    def set_state_data(self, data: dict):
+        self.state_data = json.dumps(data, ensure_ascii=False)
