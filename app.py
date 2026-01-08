@@ -230,15 +230,86 @@ async def process_message(message: Dict[str, Any]):
         await send_message(chat_id, "📁 Чтобы добавить файл, сначала начни /add")
 
 
+
+def enrich_query_for_rag(query: str) -> str:
+    """Улучшает запрос для лучшего поиска в RAG"""
+    query_lower = query.lower()
+    
+    # Если спрашивают о ценах/вариантах — добавляем ключевые слова карточек квартир
+    price_keywords = ['млн', 'миллион', 'цен', 'стои', 'вариант', 'предложен', 'квартир', 'студи', 'одноком', 'двухком']
+    
+    if any(kw in query_lower for kw in price_keywords):
+        return f"{query} Номер помещения Цена квартира студия этаж площадь комнат"
+    
+    return query
+
+
+def extract_price_range(query: str) -> tuple:
+    """Извлекает диапазон цен из запроса"""
+    import re
+    query_lower = query.lower()
+    
+    # Паттерны: "от 15 до 19 млн", "до 25 млн", "от 10 млн"
+    pattern_range = r'от\s*(\d+)\s*до\s*(\d+)\s*млн'
+    pattern_to = r'до\s*(\d+)\s*млн'
+    pattern_from = r'от\s*(\d+)\s*млн'
+    
+    match = re.search(pattern_range, query_lower)
+    if match:
+        return int(match.group(1)) * 1_000_000, int(match.group(2)) * 1_000_000
+    
+    match = re.search(pattern_to, query_lower)
+    if match:
+        return 0, int(match.group(1)) * 1_000_000
+    
+    match = re.search(pattern_from, query_lower)
+    if match:
+        return int(match.group(1)) * 1_000_000, 999_000_000_000
+    
+    return None, None
+
+
+def filter_chunks_by_price(chunks: list, min_price: int, max_price: int) -> list:
+    """Фильтрует чанки по диапазону цен и добавляет метку"""
+    import re
+    filtered = []
+    
+    for chunk in chunks:
+        text = chunk['text']
+        
+        # Ищем цену в формате "Цена – 16181278"
+        match = re.search(r'Цена\s*[–-]\s*(\d+)', text)
+        if match:
+            price = int(match.group(1))
+            if min_price <= price <= max_price:
+                chunk["text"] = "PODHODIT " + str(price) + " " + text
+                filtered.insert(0, chunk)
+                filtered.insert(0, chunk)  # В начало
+            else:
+                filtered.append(chunk)
+        else:
+            filtered.append(chunk)
+    
+    return filtered
+
+
 async def handle_universal(chat_id: int, text: str, state_data: dict = None):
     """Универсальный обработчик через RAG + LLM"""
     
     # Сохраняем сообщение пользователя
     save_message(chat_id, "user", text)
     
+    # Улучшаем запрос для RAG - добавляем ключевые слова для поиска квартир
+    search_query = enrich_query_for_rag(text)
+    
     # RAG поиск
     property_id = state_data.get("property_id") if state_data else None
-    chunks = rag_search(chat_id, text, property_id=property_id, limit=10)
+    chunks = rag_search(chat_id, search_query, property_id=property_id, limit=50)
+    
+    # Фильтруем по цене если указан диапазон
+    min_price, max_price = extract_price_range(text)
+    if min_price is not None:
+        chunks = filter_chunks_by_price(chunks, min_price, max_price)
     
     # История диалога
     history = get_chat_history(chat_id, limit=6)
